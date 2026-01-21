@@ -9,13 +9,8 @@ import re
 # ---------------------------------------------------------------------
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
-output_folder = os.path.join(base_dir, "output")
 
 print("\033[1;34mstarting script...\033[0m")  # blue for info
-
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
-    print(f"📂 folder \033[1;34m'output'\033[0m created")
 
 # ---------------------------------------------------------------------
 # editable configuration
@@ -62,12 +57,26 @@ def split_and_rename_pdf():
     input_pdf = pdf_files[0]
     input_pdf_path = os.path.join(base_dir, input_pdf)
 
+    # -----------------------------------------------------------------
+    # create output folder named after the input pdf
+    # -----------------------------------------------------------------
+
+    pdf_base_name = os.path.splitext(input_pdf)[0]
+    output_folder = os.path.join(base_dir, pdf_base_name)
+
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+        print(f"📂 folder \033[1;34m'{pdf_base_name}'\033[0m created")
+
     # locate or create excel
     if not os.path.exists(excel_filename):
-        print(f"\033[1;33m⚠️  excel file 'rename-pdf-mapping.xlsx' not found. a template will be created.\033[0m")
+        print(
+            "\033[1;33m⚠️  excel file 'rename-pdf-mapping.xlsx' not found. "
+            "a template will be created.\033[0m"
+        )
         df_template = pd.DataFrame(columns=required_columns)
         df_template.to_excel(excel_filename, index=False)
-        print(f"\033[1;33m📄 excel file created. fill it out and run the script again.\033[0m")
+        print("\033[1;33m📄 excel file created. fill it out and run the script again.\033[0m")
         sys.exit(0)
 
     # read excel
@@ -77,7 +86,7 @@ def split_and_rename_pdf():
         print(f"\033[1;31m❌ error: missing columns in excel: {missing_columns}\033[0m")
         sys.exit(1)
     if df.empty:
-        print(f"\033[1;31m❌ error: excel file is empty.\033[0m")
+        print("\033[1;31m❌ error: excel file is empty.\033[0m")
         sys.exit(1)
 
     # read pdf
@@ -88,6 +97,7 @@ def split_and_rename_pdf():
     # ---------------------------------------------
     # check for existing output files
     # ---------------------------------------------
+
     existing_files = []
 
     for index, row in df.iterrows():
@@ -119,7 +129,9 @@ def split_and_rename_pdf():
     num_existing = len(existing_files)
     if num_existing > 0:
         while True:
-            choice = input(f"\033[1;33m⚠️  {num_existing} file(s) already exist, overwrite them all? (y/n): \033[0m").strip().lower()
+            choice = input(
+                f"\033[1;33m⚠️  {num_existing} file(s) already exist, overwrite them all? (y/n): \033[0m"
+            ).strip().lower()
             if choice == 'y':
                 overwrite_all = True
                 break
@@ -127,7 +139,7 @@ def split_and_rename_pdf():
                 overwrite_all = False
                 break
             else:
-                print(f"\033[1;33m⚠️  please enter 'y' or 'n'..\033[0m")
+                print("\033[1;33m⚠️  please enter 'y' or 'n'.\033[0m")
 
     # progress bar colors
     progress_color = "\033[1;36m"  # cyan
@@ -155,7 +167,10 @@ def split_and_rename_pdf():
 
         # validate page ranges
         if pdf_first < 1 or pdf_last > total_pages or pdf_first > pdf_last:
-            print(f"\033[1;31m❌ invalid page range for '{product}': {pdf_first}-{pdf_last} (pdf has {total_pages} pages)\033[0m")
+            print(
+                f"\033[1;31m❌ invalid page range for '{product}': "
+                f"{pdf_first}-{pdf_last} (pdf has {total_pages} pages)\033[0m"
+            )
             sys.exit(1)
 
         writer = PdfWriter()
@@ -178,7 +193,9 @@ def split_and_rename_pdf():
             counter = 1
             base_name = new_base_name
             while os.path.exists(final_output_path):
-                final_output_path = os.path.join(output_folder, f"{base_name}_{counter}.pdf")
+                final_output_path = os.path.join(
+                    output_folder, f"{base_name}_{counter}.pdf"
+                )
                 counter += 1
 
         with open(final_output_path, "wb") as f:
@@ -189,9 +206,14 @@ def split_and_rename_pdf():
         bar_length = 30
         filled_length = int(bar_length * progress)
         bar = "█" * filled_length + "-" * (bar_length - filled_length)
-        print(f"\r{progress_color}progress: |{bar}| {index + 1}/{total_outputs} (pages {pdf_first}-{pdf_last}){reset_color}", end="")
+        print(
+            f"\r{progress_color}progress: |{bar}| "
+            f"{index + 1}/{total_outputs} "
+            f"(pages {pdf_first}-{pdf_last}){reset_color}",
+            end=""
+        )
 
-    print(f"\n\033[1;32m✅ all pdfs were successfully extracted and renamed.\033[0m")
+    print("\n\033[1;32m✅ all pdfs were successfully extracted and renamed.\033[0m")
 
 # ---------------------------------------------------------------------
 # entry point
