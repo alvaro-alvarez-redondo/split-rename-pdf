@@ -38,18 +38,15 @@ FIELDS_TO_SANITIZE = ["yearbook", "year", "category", "products"]
 def print_error(message: str, help_lines: list[str]):
     """Print error message with optional help tips in colored format."""
     print()
-
     print(f"{ERR}{message}{RST}")
     for line in help_lines:
         print(f"{HELP}• {line}{RST}")
     print()
 
-
 def sanitize_filename(name: str) -> str:
     """Sanitize a string to be a safe file name."""
     cleaned = re.sub(r'[\/:*?"<>|\s]+', '_', name.strip())
     return cleaned.strip('_').lower()
-
 
 def check_pdf_files(base_dir: Path) -> Path:
     """Ensure exactly one PDF file exists in the directory."""
@@ -74,14 +71,12 @@ def check_pdf_files(base_dir: Path) -> Path:
         sys.exit(1)
     return pdf_files[0]
 
-
 def create_output_folder(base_dir: Path, pdf_name: str) -> Path:
     """Create an output folder for split PDFs."""
     folder = base_dir / pdf_name.stem
     folder.mkdir(exist_ok=True)
     print(f"Folder {INFO}'{folder.name}'{RST} ready")
     return folder
-
 
 def load_excel(excel_path: Path) -> pd.DataFrame:
     """Load Excel file and validate columns."""
@@ -113,10 +108,48 @@ def load_excel(excel_path: Path) -> pd.DataFrame:
         sys.exit(1)
     return df
 
+# ---------------------------------------------------------------------
+# New: Handle empty 'products'
+# ---------------------------------------------------------------------
+
+def handle_empty_products(df: pd.DataFrame) -> pd.DataFrame:
+    """Check for rows with empty 'products' and ask user if it is intentional."""
+    empty_rows = df[df['products'].isna() | (df['products'].astype(str).str.strip() == "")]
+    num_empty = len(empty_rows)
+    if num_empty == 0:
+        return df  # Nothing to handle
+
+    # Warn the user
+    while True:
+        choice = input(
+            f"{WARN}{num_empty} product(s) have empty names. Is this intentional? (y/n): {RST}"
+        ).strip().lower()
+        if choice in ("y", "n"):
+            intentional = choice == "y"
+            break
+        print(f"{WARN}Please enter 'y' or 'n'.{RST}")
+
+    if intentional:
+        # Fill empty products with empty string so generate_output_name can handle it
+        df['products'] = df['products'].fillna("")
+        return df
+    else:
+        # Stop execution and show instructions
+        print_error(
+            f"{num_empty} product(s) are empty. Please fix them in the Excel file.",
+            [
+                "Open the Excel file and fill in all missing 'products' values",
+                "Ensure no cells in the 'products' column are left blank",
+                "Rerun the script after fixing the Excel file"
+            ]
+        )
+        sys.exit(1)
 
 def generate_output_name(row) -> str:
     """Generate sanitized PDF output name from row data."""
     data = {field: sanitize_filename(str(getattr(row, field))) for field in FIELDS_TO_SANITIZE}
+    if data["products"] == "":
+        return f"{data['yearbook']}_{data['category']}_{data['year']}_{int(row.yearbook_start)}_{int(row.yearbook_end)}"
     return OUTPUT_PATTERN.format(
         yearbook=data["yearbook"],
         category=data["category"],
@@ -126,7 +159,6 @@ def generate_output_name(row) -> str:
         product=data["products"]
     )
 
-
 def extract_pdf_pages(reader: PdfReader, start: int, end: int, output_path: Path):
     """Extract pages from reader and write to output_path."""
     writer = PdfWriter()
@@ -134,7 +166,6 @@ def extract_pdf_pages(reader: PdfReader, start: int, end: int, output_path: Path
         writer.add_page(reader.pages[i])
     with open(output_path, "wb") as f:
         writer.write(f)
-
 
 # ---------------------------------------------------------------------
 # Main function
@@ -149,6 +180,10 @@ def split_and_rename_pdf():
 
     # Load Excel
     df = load_excel(EXCEL_FILENAME)
+
+    # Handle empty 'products'
+    df = handle_empty_products(df)
+
     total_pages = len(PdfReader(input_pdf_path).pages)
     total_outputs = len(df)
 
@@ -213,7 +248,6 @@ def split_and_rename_pdf():
         print(f"\r{INFO}Progress: |{bar}| {idx}/{total_outputs} (pages {pdf_first}-{pdf_last}){RST}", end="")
 
     print(f"\n{OK}All PDFs were successfully extracted and renamed.{RST}")
-
 
 # ---------------------------------------------------------------------
 # Entry point
