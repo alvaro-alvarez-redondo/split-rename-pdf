@@ -80,7 +80,19 @@ def load_excel(path: Path) -> pd.DataFrame:
         )
         sys.exit(0)
 
-    df = pd.read_excel(path)
+    df = pd.read_excel(
+        path,
+        dtype={
+            "yearbook": "string",
+            "year": "string",
+            "category": "string",
+            "products": "string",
+            "yearbook_start": "Int64",
+            "yearbook_end": "Int64",
+            "pdf_start": "Int64",
+            "pdf_end": "Int64",
+        }
+    )
 
     missing = set(REQUIRED_COLUMNS) - set(df.columns)
     if missing or df.empty:
