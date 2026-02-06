@@ -119,7 +119,7 @@ def find_and_rename_valid_excel(target_path: Path) -> bool:
 
     if len(valid_files) == 1:
         valid_files[0].rename(target_path)
-        print(f"{INFO}Excel encontrado y renombrado automáticamente a '{target_path.name}'{RST}")
+        print(f"{INFO}Excel file found and renamed as '{target_path.name}'{RST}")
         return True
 
     if len(valid_files) > 1:
