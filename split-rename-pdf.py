@@ -1,14 +1,64 @@
 import sys
-import re
+import subprocess
 from pathlib import Path
+import re
 
+# ---------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------
+BASE_DIR = Path(__file__).parent.resolve()
+EXCEL_FILENAME = BASE_DIR / "rename-pdf-mapping.xlsx"
+OUTPUT_PATTERN = "{yearbook}_{category}_{year}_{first_page}_{last_page}_{product}"
+REQUIRED_COLUMNS = [
+    "yearbook", "year", "category", "products",
+    "yearbook_start", "yearbook_end", "pdf_start", "pdf_end"
+]
+FIELDS_TO_SANITIZE = ["yearbook", "year", "category", "products"]
+REQUIRED_PACKAGES = ["pandas", "PyPDF2", "openpyxl"]
+
+# ---------------------------------------------------------------------
+# Python version check
+# ---------------------------------------------------------------------
+if sys.version_info < (3, 8):
+    print("\033[1;31mError: Python 3.8+ is required\033[0m")
+    sys.exit(1)
+
+# ---------------------------------------------------------------------
+# Automatic requirements.txt creation
+# ---------------------------------------------------------------------
+REQUIREMENTS_FILE = BASE_DIR / "requirements.txt"
+if not REQUIREMENTS_FILE.exists():
+    REQUIREMENTS_FILE.write_text("\n".join(REQUIRED_PACKAGES))
+    print("\033[1;33m'requirements.txt' created. The script will attempt to install missing packages automatically.\033[0m")
+    sys.exit(0)
+
+# ---------------------------------------------------------------------
+# Automatic installation of missing packages
+# ---------------------------------------------------------------------
+missing_modules = []
+for pkg in REQUIRED_PACKAGES:
+    try:
+        __import__(pkg)
+    except ModuleNotFoundError:
+        missing_modules.append(pkg)
+
+if missing_modules:
+    print(f"\033[1;33mInstalling missing packages: {', '.join(missing_modules)}...\033[0m")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing_modules])
+    except subprocess.CalledProcessError:
+        print(f"\033[1;31mFailed to install packages: {', '.join(missing_modules)}\033[0m")
+        sys.exit(1)
+
+# ---------------------------------------------------------------------
+# Now all packages are guaranteed to be installed → imports at the top
+# ---------------------------------------------------------------------
 import pandas as pd
 from PyPDF2 import PdfReader, PdfWriter
 
 # ---------------------------------------------------------------------
 # ANSI colors
 # ---------------------------------------------------------------------
-
 ERR = "\033[1;31m"
 WARN = "\033[1;33m"
 INFO = "\033[1;34m"
@@ -17,24 +67,8 @@ OK = "\033[1;32m"
 RST = "\033[0m"
 
 # ---------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------
-
-BASE_DIR = Path(__file__).parent.resolve()
-EXCEL_FILENAME = BASE_DIR / "rename-pdf-mapping.xlsx"
-OUTPUT_PATTERN = "{yearbook}_{category}_{year}_{first_page}_{last_page}_{product}"
-
-REQUIRED_COLUMNS = [
-    "yearbook", "year", "category", "products",
-    "yearbook_start", "yearbook_end", "pdf_start", "pdf_end"
-]
-
-FIELDS_TO_SANITIZE = ["yearbook", "year", "category", "products"]
-
-# ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
-
 def print_error(message: str, help_lines: list[str]):
     print(f"\n{ERR}{message}{RST}")
     for line in help_lines:
@@ -48,10 +82,7 @@ def sanitize_filename(value: str) -> str:
 def ask_yes_no(prompt: str) -> bool:
     choice = input(prompt).strip().lower()
     if choice not in {"y", "n"}:
-        print_error(
-            "Invalid input.",
-            ["Please enter only 'y' or 'n'"]
-        )
+        print_error("Invalid input.", ["Please enter only 'y' or 'n'"])
         sys.exit(1)
     return choice == "y"
 
@@ -107,7 +138,6 @@ def load_excel(path: Path) -> pd.DataFrame:
 # ---------------------------------------------------------------------
 # Data processing
 # ---------------------------------------------------------------------
-
 def handle_empty_products(df: pd.DataFrame) -> pd.DataFrame:
     empty = df["products"].isna() | (df["products"].astype(str).str.strip() == "")
     if not empty.any():
@@ -118,20 +148,14 @@ def handle_empty_products(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     if not intentional:
-        print_error(
-            "Empty products detected.",
-            ["Fill all 'products' cells in Excel and rerun"]
-        )
+        print_error("Empty products detected.", ["Fill all 'products' cells in Excel and rerun"])
         sys.exit(1)
 
     df.loc[empty, "products"] = ""
     return df
 
 def generate_output_name(row) -> str:
-    data = {
-        field: sanitize_filename(str(getattr(row, field)))
-        for field in FIELDS_TO_SANITIZE
-    }
+    data = {field: sanitize_filename(str(getattr(row, field))) for field in FIELDS_TO_SANITIZE}
 
     if data["products"] == "":
         return f"{data['yearbook']}_{data['category']}_{data['year']}_{int(row.yearbook_start)}_{int(row.yearbook_end)}"
@@ -146,10 +170,7 @@ def generate_output_name(row) -> str:
     )
 
 def unique_output_path(folder: Path, name: str) -> Path:
-    candidates = (
-        folder / f"{name}.pdf",
-        *(folder / f"{name}_{i}.pdf" for i in range(1, 10_000))
-    )
+    candidates = (folder / f"{name}.pdf", *(folder / f"{name}_{i}.pdf" for i in range(1, 10_000)))
     return next(p for p in candidates if not p.exists())
 
 def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
@@ -162,7 +183,6 @@ def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
-
 def split_and_rename_pdf():
     print(f"{INFO}Starting...{RST}")
 
@@ -175,12 +195,9 @@ def split_and_rename_pdf():
     reader = PdfReader(pdf_path)
     total_pages = len(reader.pages)
 
-    # Vectorized output name generation
     df["output_name"] = df.apply(generate_output_name, axis=1)
 
-    existing = df["output_name"].map(
-        lambda n: (output_folder / f"{n}.pdf").exists()
-    )
+    existing = df["output_name"].map(lambda n: (output_folder / f"{n}.pdf").exists())
 
     overwrite_all = False
     if existing.any():
@@ -194,10 +211,7 @@ def split_and_rename_pdf():
         pdf_start, pdf_end = int(row.pdf_start), int(row.pdf_end)
 
         if pdf_start < 1 or pdf_end > total_pages or pdf_start > pdf_end:
-            print_error(
-                f"Invalid page range in row {idx}.",
-                ["Check pdf_start and pdf_end values"]
-            )
+            print_error(f"Invalid page range in row {idx}.", ["Check pdf_start and pdf_end values"])
             sys.exit(1)
 
         output_path = output_folder / f"{row.output_name}.pdf"
@@ -214,7 +228,6 @@ def split_and_rename_pdf():
     print(f"\n{OK}PDFs successfully created.{RST}")
 
 # ---------------------------------------------------------------------
-
 if __name__ == "__main__":
     try:
         split_and_rename_pdf()

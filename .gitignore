@@ -1,3 +1,8 @@
-/fao_crops_1949.pdf
-/output
-/rename pdf mapping.xlsx
+# Ignore everything by default
+*
+
+# Allow Python source files
+!*.py
+
+# Allow .gitignore itself
+!.gitignore
