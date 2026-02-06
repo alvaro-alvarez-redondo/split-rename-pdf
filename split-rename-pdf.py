@@ -51,7 +51,7 @@ if missing_modules:
         sys.exit(1)
 
 # ---------------------------------------------------------------------
-# Now all packages are guaranteed to be installed → imports at the top
+# Imports after install
 # ---------------------------------------------------------------------
 import pandas as pd  # noqa: E402
 from PyPDF2 import PdfReader, PdfWriter  # noqa: E402
@@ -102,14 +102,48 @@ def create_output_folder(base_dir: Path, pdf_path: Path) -> Path:
     print(f"{INFO}Output folder '{folder.name}' ready{RST}")
     return folder
 
+# ---------------------------------------------------------------------
+# Excel auto-detection & renaming
+# ---------------------------------------------------------------------
+def find_and_rename_valid_excel(target_path: Path) -> bool:
+    candidates = [p for p in target_path.parent.glob("*.xlsx") if p != target_path]
+    valid_files = []
+
+    for excel in candidates:
+        try:
+            df = pd.read_excel(excel, nrows=0)
+            if set(REQUIRED_COLUMNS).issubset(df.columns):
+                valid_files.append(excel)
+        except Exception:
+            continue
+
+    if len(valid_files) == 1:
+        valid_files[0].rename(target_path)
+        print(f"{INFO}Excel encontrado y renombrado automáticamente a '{target_path.name}'{RST}")
+        return True
+
+    if len(valid_files) > 1:
+        print_error(
+            "Multiple valid Excel files found.",
+            [
+                "Leave only one Excel with the required columns",
+                f"Expected name: {target_path.name}"
+            ]
+        )
+        sys.exit(1)
+
+    return False
+
 def load_excel(path: Path) -> pd.DataFrame:
     if not path.exists():
-        pd.DataFrame(columns=REQUIRED_COLUMNS).to_excel(path, index=False)
-        print_error(
-            f"Excel file '{path.name}' was created.",
-            ["Fill it with data and run the script again"]
-        )
-        sys.exit(0)
+        renamed = find_and_rename_valid_excel(path)
+        if not renamed:
+            pd.DataFrame(columns=REQUIRED_COLUMNS).to_excel(path, index=False)
+            print_error(
+                f"Excel file '{path.name}' was created.",
+                ["Fill it with data and run the script again"]
+            )
+            sys.exit(0)
 
     df = pd.read_excel(
         path,
