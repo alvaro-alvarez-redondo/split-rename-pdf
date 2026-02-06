@@ -53,8 +53,8 @@ if missing_modules:
 # ---------------------------------------------------------------------
 # Now all packages are guaranteed to be installed → imports at the top
 # ---------------------------------------------------------------------
-import pandas as pd
-from PyPDF2 import PdfReader, PdfWriter
+import pandas as pd  # noqa: E402
+from PyPDF2 import PdfReader, PdfWriter  # noqa: E402
 
 # ---------------------------------------------------------------------
 # ANSI colors
