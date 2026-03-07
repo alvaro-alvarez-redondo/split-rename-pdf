@@ -34,6 +34,15 @@ class ControlledExit(Exception):
     """Raised for controlled, user-facing exits without SystemExit noise."""
 
 
+def is_module_available(module_name: str) -> bool:
+    """Return True when the module can be imported."""
+    try:
+        __import__(module_name)
+    except ModuleNotFoundError:
+        return False
+    return True
+
+
 def bootstrap_environment() -> bool:
     """Prepare runtime dependencies. Returns False when script should stop early."""
     if sys.version_info < (3, 8):
@@ -44,12 +53,7 @@ def bootstrap_environment() -> bool:
         REQUIREMENTS_FILE.write_text("\n".join(REQUIRED_PACKAGES))
         print("\033[1;33m'requirements.txt' created. The script will attempt to install missing packages automatically.\033[0m")
 
-    missing_modules = []
-    for pkg in REQUIRED_PACKAGES:
-        try:
-            __import__(pkg)
-        except ModuleNotFoundError:
-            missing_modules.append(pkg)
+    missing_modules = [pkg for pkg in REQUIRED_PACKAGES if not is_module_available(pkg)]
 
     if missing_modules:
         print(f"\033[1;33mInstalling missing packages: {', '.join(missing_modules)}...\033[0m")
@@ -81,9 +85,8 @@ PdfWriter = None
 # Helpers
 # ---------------------------------------------------------------------
 def print_error(message: str, help_lines: list[str]):
-    print(f"{ERR}{message}{RST}")
-    for line in help_lines:
-        print(f"{HELP}• {line}{RST}")
+    formatted_help = "\n".join(f"{HELP}• {line}{RST}" for line in help_lines)
+    print(f"{ERR}{message}{RST}\n{formatted_help}")
 
 
 def sanitize_filename(value: str) -> str:
@@ -120,17 +123,19 @@ def create_output_folder(base_dir: Path, pdf_path: Path) -> Path:
 # ---------------------------------------------------------------------
 # Excel auto-detection & renaming
 # ---------------------------------------------------------------------
+def is_valid_mapping_excel(excel_path: Path) -> bool:
+    """Check whether an Excel file has all required mapping columns."""
+    try:
+        columns = pd.read_excel(excel_path, nrows=0).columns
+    except Exception:
+        return False
+    return set(REQUIRED_COLUMNS).issubset(columns)
+
+
 def find_and_rename_valid_excel(target_path: Path) -> bool:
     candidates = [p for p in target_path.parent.glob("*.xlsx") if p != target_path]
-    valid_files = []
+    valid_files = [excel for excel in candidates if is_valid_mapping_excel(excel)]
 
-    for excel in candidates:
-        try:
-            df = pd.read_excel(excel, nrows=0)
-            if set(REQUIRED_COLUMNS).issubset(df.columns):
-                valid_files.append(excel)
-        except Exception:
-            continue
 
     if len(valid_files) == 1:
         valid_files[0].rename(target_path)
@@ -236,8 +241,8 @@ def unique_output_path(folder: Path, name: str) -> Path:
 
 def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
     writer = PdfWriter()
-    for i in range(start - 1, end):
-        writer.add_page(reader.pages[i])
+    for page in reader.pages[start - 1:end]:
+        writer.add_page(page)
     with open(output, "wb") as f:
         writer.write(f)
 
