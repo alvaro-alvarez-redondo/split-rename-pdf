@@ -81,10 +81,9 @@ PdfWriter = None
 # Helpers
 # ---------------------------------------------------------------------
 def print_error(message: str, help_lines: list[str]):
-    print(f"\n{ERR}{message}{RST}")
+    print(f"{ERR}{message}{RST}")
     for line in help_lines:
         print(f"{HELP}• {line}{RST}")
-    print()
 
 
 def sanitize_filename(value: str) -> str:
