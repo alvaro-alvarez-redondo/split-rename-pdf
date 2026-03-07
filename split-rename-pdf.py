@@ -1,3 +1,4 @@
+from __future__ import annotations
 import sys
 import subprocess
 from pathlib import Path
@@ -16,45 +17,7 @@ REQUIRED_COLUMNS = [
 FIELDS_TO_SANITIZE = ["yearbook", "year", "category", "products"]
 REQUIRED_PACKAGES = ["pandas", "PyPDF2", "openpyxl"]
 
-# ---------------------------------------------------------------------
-# Python version check
-# ---------------------------------------------------------------------
-if sys.version_info < (3, 8):
-    print("\033[1;31mError: Python 3.8+ is required\033[0m")
-    sys.exit(1)
-
-# ---------------------------------------------------------------------
-# Automatic requirements.txt creation
-# ---------------------------------------------------------------------
 REQUIREMENTS_FILE = BASE_DIR / "requirements.txt"
-if not REQUIREMENTS_FILE.exists():
-    REQUIREMENTS_FILE.write_text("\n".join(REQUIRED_PACKAGES))
-    print("\033[1;33m'requirements.txt' created. The script will attempt to install missing packages automatically.\033[0m")
-    sys.exit(0)
-
-# ---------------------------------------------------------------------
-# Automatic installation of missing packages
-# ---------------------------------------------------------------------
-missing_modules = []
-for pkg in REQUIRED_PACKAGES:
-    try:
-        __import__(pkg)
-    except ModuleNotFoundError:
-        missing_modules.append(pkg)
-
-if missing_modules:
-    print(f"\033[1;33mInstalling missing packages: {', '.join(missing_modules)}...\033[0m")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", *missing_modules])
-    except subprocess.CalledProcessError:
-        print(f"\033[1;31mFailed to install packages: {', '.join(missing_modules)}\033[0m")
-        sys.exit(1)
-
-# ---------------------------------------------------------------------
-# Imports after install
-# ---------------------------------------------------------------------
-import pandas as pd  # noqa: E402
-from PyPDF2 import PdfReader, PdfWriter  # noqa: E402
 
 # ---------------------------------------------------------------------
 # ANSI colors
@@ -66,6 +29,54 @@ HELP = "\033[1;37m"
 OK = "\033[1;32m"
 RST = "\033[0m"
 
+
+class ControlledExit(Exception):
+    """Raised for controlled, user-facing exits without SystemExit noise."""
+
+
+def bootstrap_environment() -> bool:
+    """Prepare runtime dependencies. Returns False when script should stop early."""
+    if sys.version_info < (3, 8):
+        print("\033[1;31mError: Python 3.8+ is required\033[0m")
+        return False
+
+    if not REQUIREMENTS_FILE.exists():
+        REQUIREMENTS_FILE.write_text("\n".join(REQUIRED_PACKAGES))
+        print("\033[1;33m'requirements.txt' created. The script will attempt to install missing packages automatically.\033[0m")
+
+    missing_modules = []
+    for pkg in REQUIRED_PACKAGES:
+        try:
+            __import__(pkg)
+        except ModuleNotFoundError:
+            missing_modules.append(pkg)
+
+    if missing_modules:
+        print(f"\033[1;33mInstalling missing packages: {', '.join(missing_modules)}...\033[0m")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", *missing_modules])
+        except subprocess.CalledProcessError:
+            print(f"\033[1;31mFailed to install packages: {', '.join(missing_modules)}\033[0m")
+            return False
+
+    global pd, PdfReader, PdfWriter
+    import pandas as pd_module
+    from PyPDF2 import PdfReader as ReaderModule, PdfWriter as WriterModule
+
+    pd = pd_module
+    PdfReader = ReaderModule
+    PdfWriter = WriterModule
+    return True
+
+
+# ---------------------------------------------------------------------
+# Runtime import placeholders
+# ---------------------------------------------------------------------
+pd = None
+PdfReader = None
+PdfWriter = None
+
+
 # ---------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------
@@ -75,16 +86,19 @@ def print_error(message: str, help_lines: list[str]):
         print(f"{HELP}• {line}{RST}")
     print()
 
+
 def sanitize_filename(value: str) -> str:
     cleaned = re.sub(r'[\/:*?"<>|\s]+', '_', value.strip())
     return cleaned.strip('_').lower()
+
 
 def ask_yes_no(prompt: str) -> bool:
     choice = input(prompt).strip().lower()
     if choice not in {"y", "n"}:
         print_error("Invalid input.", ["Please enter only 'y' or 'n'"])
-        sys.exit(1)
+        raise ControlledExit
     return choice == "y"
+
 
 def check_pdf_files(base_dir: Path) -> Path:
     pdfs = list(base_dir.glob("*.pdf"))
@@ -93,14 +107,16 @@ def check_pdf_files(base_dir: Path) -> Path:
             "Expected exactly one PDF file.",
             ["Place only one .pdf file in the script directory"]
         )
-        sys.exit(1)
+        raise ControlledExit
     return pdfs[0]
+
 
 def create_output_folder(base_dir: Path, pdf_path: Path) -> Path:
     folder = base_dir / pdf_path.stem
     folder.mkdir(exist_ok=True)
     print(f"{INFO}Output folder '{folder.name}' ready{RST}")
     return folder
+
 
 # ---------------------------------------------------------------------
 # Excel auto-detection & renaming
@@ -130,21 +146,29 @@ def find_and_rename_valid_excel(target_path: Path) -> bool:
                 f"Expected name: {target_path.name}"
             ]
         )
-        sys.exit(1)
+        raise ControlledExit
 
     return False
 
-def load_excel(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        renamed = find_and_rename_valid_excel(path)
-        if not renamed:
-            pd.DataFrame(columns=REQUIRED_COLUMNS).to_excel(path, index=False)
-            print_error(
-                f"Excel file '{path.name}' was created.",
-                ["Fill it with data and run the script again"]
-            )
-            sys.exit(0)
 
+def ensure_excel_exists(path: Path) -> bool:
+    """Ensure mapping file exists. Returns True if created during this run."""
+    if path.exists():
+        return False
+
+    renamed = find_and_rename_valid_excel(path)
+    if renamed:
+        return False
+
+    pd.DataFrame(columns=REQUIRED_COLUMNS).to_excel(path, index=False)
+    print_error(
+        f"Excel file '{path.name}' was created.",
+        ["Fill it with data and run the script again"]
+    )
+    return True
+
+
+def load_excel(path: Path) -> pd.DataFrame:
     df = pd.read_excel(
         path,
         dtype={
@@ -165,9 +189,10 @@ def load_excel(path: Path) -> pd.DataFrame:
             "Excel validation failed.",
             ["Verify required columns exist", "Ensure the file is not empty"]
         )
-        sys.exit(1)
+        raise ControlledExit
 
     return df
+
 
 # ---------------------------------------------------------------------
 # Data processing
@@ -183,10 +208,11 @@ def handle_empty_products(df: pd.DataFrame) -> pd.DataFrame:
 
     if not intentional:
         print_error("Empty products detected.", ["Fill all 'products' cells in Excel and rerun"])
-        sys.exit(1)
+        raise ControlledExit
 
     df.loc[empty, "products"] = ""
     return df
+
 
 def generate_output_name(row) -> str:
     data = {field: sanitize_filename(str(getattr(row, field))) for field in FIELDS_TO_SANITIZE}
@@ -203,9 +229,11 @@ def generate_output_name(row) -> str:
         product=data["products"]
     )
 
+
 def unique_output_path(folder: Path, name: str) -> Path:
     candidates = (folder / f"{name}.pdf", *(folder / f"{name}_{i}.pdf" for i in range(1, 10_000)))
     return next(p for p in candidates if not p.exists())
+
 
 def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
     writer = PdfWriter()
@@ -214,13 +242,19 @@ def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
     with open(output, "wb") as f:
         writer.write(f)
 
+
 # ---------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------
 def split_and_rename_pdf():
     print(f"{INFO}Starting...{RST}")
 
+    excel_was_created = ensure_excel_exists(EXCEL_FILENAME)
     pdf_path = check_pdf_files(BASE_DIR)
+
+    if excel_was_created:
+        return
+
     output_folder = create_output_folder(BASE_DIR, pdf_path)
 
     df = load_excel(EXCEL_FILENAME)
@@ -246,7 +280,7 @@ def split_and_rename_pdf():
 
         if pdf_start < 1 or pdf_end > total_pages or pdf_start > pdf_end:
             print_error(f"Invalid page range in row {idx}.", ["Check pdf_start and pdf_end values"])
-            sys.exit(1)
+            raise ControlledExit
 
         output_path = output_folder / f"{row.output_name}.pdf"
 
@@ -261,13 +295,17 @@ def split_and_rename_pdf():
 
     print(f"\n{OK}PDFs successfully created.{RST}")
 
+
 # ---------------------------------------------------------------------
 if __name__ == "__main__":
     try:
+        if not bootstrap_environment():
+            raise ControlledExit
         split_and_rename_pdf()
+    except ControlledExit:
+        pass
     except Exception as e:
         print_error(
             f"Unexpected error: {e}",
             ["Ensure the PDF is closed", "Check write permissions"]
         )
-        sys.exit(1)
