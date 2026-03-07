@@ -8,7 +8,7 @@ import re
 # Configuration
 # ---------------------------------------------------------------------
 BASE_DIR = Path(__file__).parent.resolve()
-EXCEL_FILENAME = BASE_DIR / "rename-pdf-mapping.xlsx"
+EXCEL_FILENAME = BASE_DIR / "split-rename-pdf-mapping.xlsx"
 OUTPUT_PATTERN = "{yearbook}_{category}_{year}_{first_page}_{last_page}_{product}"
 REQUIRED_COLUMNS = [
     "yearbook", "year", "category", "products",
