@@ -53,7 +53,7 @@ def bootstrap_environment() -> bool:
         REQUIREMENTS_FILE.write_text("\n".join(REQUIRED_PACKAGES))
         print("\033[1;33m'requirements.txt' created. The script will attempt to install missing packages automatically.\033[0m")
 
-    missing_modules = [pkg for pkg in REQUIRED_PACKAGES if not is_module_available(pkg)]
+    missing_modules = list(filter(lambda pkg: not is_module_available(pkg), REQUIRED_PACKAGES))
 
     if missing_modules:
         print(f"\033[1;33mInstalling missing packages: {', '.join(missing_modules)}...\033[0m")
@@ -85,7 +85,7 @@ PdfWriter = None
 # Helpers
 # ---------------------------------------------------------------------
 def print_error(message: str, help_lines: list[str]):
-    formatted_help = "\n".join(f"{HELP}• {line}{RST}" for line in help_lines)
+    formatted_help = "\n".join(map(lambda line: f"{HELP}• {line}{RST}", help_lines))
     print(f"{ERR}{message}{RST}\n{formatted_help}")
 
 
@@ -133,8 +133,8 @@ def is_valid_mapping_excel(excel_path: Path) -> bool:
 
 
 def find_and_rename_valid_excel(target_path: Path) -> bool:
-    candidates = [p for p in target_path.parent.glob("*.xlsx") if p != target_path]
-    valid_files = [excel for excel in candidates if is_valid_mapping_excel(excel)]
+    candidates = list(filter(lambda path_item: path_item != target_path, target_path.parent.glob("*.xlsx")))
+    valid_files = list(filter(is_valid_mapping_excel, candidates))
 
 
     if len(valid_files) == 1:
@@ -219,7 +219,7 @@ def handle_empty_products(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def generate_output_name(row) -> str:
-    data = {field: sanitize_filename(str(getattr(row, field))) for field in FIELDS_TO_SANITIZE}
+    data = dict(map(lambda field: (field, sanitize_filename(str(getattr(row, field)))), FIELDS_TO_SANITIZE))
 
     if data["products"] == "":
         return f"{data['yearbook']}_{data['category']}_{data['year']}_{int(row.yearbook_start)}_{int(row.yearbook_end)}"
@@ -234,15 +234,19 @@ def generate_output_name(row) -> str:
     )
 
 
-def unique_output_path(folder: Path, name: str) -> Path:
-    candidates = (folder / f"{name}.pdf", *(folder / f"{name}_{i}.pdf" for i in range(1, 10_000)))
-    return next(p for p in candidates if not p.exists())
+def unique_output_path(folder: Path, name: str, suffix: int = 0) -> Path:
+    candidate = folder / (f"{name}.pdf" if suffix == 0 else f"{name}_{suffix}.pdf")
+    if not candidate.exists():
+        return candidate
+    if suffix >= 9_999:
+        print_error("Too many conflicting output filenames.", ["Clean output folder or rename source data"])
+        raise ControlledExit
+    return unique_output_path(folder, name, suffix + 1)
 
 
 def extract_pdf_pages(reader: PdfReader, start: int, end: int, output: Path):
     writer = PdfWriter()
-    for page in reader.pages[start - 1:end]:
-        writer.add_page(page)
+    list(map(writer.add_page, reader.pages[start - 1:end]))
     with open(output, "wb") as f:
         writer.write(f)
 
@@ -279,7 +283,8 @@ def split_and_rename_pdf():
 
     total = len(df)
 
-    for idx, row in enumerate(df.itertuples(), start=1):
+    def process_row(item):
+        idx, row = item
         pdf_start, pdf_end = int(row.pdf_start), int(row.pdf_end)
 
         if pdf_start < 1 or pdf_end > total_pages or pdf_start > pdf_end:
@@ -296,6 +301,8 @@ def split_and_rename_pdf():
         progress = idx / total
         bar = "█" * int(30 * progress) + "-" * (30 - int(30 * progress))
         print(f"\r{INFO}|{bar}| {idx}/{total}{RST}", end="")
+
+    list(map(process_row, enumerate(df.itertuples(), start=1)))
 
     print(f"\n{OK}PDFs successfully created.{RST}")
 
