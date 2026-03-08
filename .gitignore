@@ -4,5 +4,9 @@
 # Allow Python source files
 !*.py
 
+# Allow documentation plans
+!docs/
+!docs/*.md
+
 # Allow .gitignore itself
 !.gitignore
