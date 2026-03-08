@@ -7,6 +7,7 @@ import re
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -583,7 +584,7 @@ def main(argv: list[str] | None = None) -> None:
     except Exception as exc:  # noqa: BLE001
         LOGGER.error("Unexpected internal error: %s", exc)
         if options.verbose:
-            LOGGER.exception("Traceback:")
+            LOGGER.error("Traceback:\n%s", traceback.format_exc())
         sys.exit(1)
 
 
