@@ -129,6 +129,12 @@ def create_output_folder(base_dir: Path, folder_name: str) -> Path:
     return folder
 
 
+def create_subfolder(parent_folder: Path, subfolder_name: str) -> Path:
+    subfolder = parent_folder / subfolder_name
+    subfolder.mkdir(exist_ok=True)
+    return subfolder
+
+
 def resolve_output_folder_name(df: pd.DataFrame) -> str:
     folder_keys = (
         df[["yearbook", "year"]]
@@ -262,6 +268,13 @@ def generate_output_name(row) -> str:
     )
 
 
+def generate_subfolder_name(row) -> str:
+    yearbook = sanitize_filename(str(getattr(row, "yearbook")))
+    category = sanitize_filename(str(getattr(row, "category")))
+    year = sanitize_filename(str(getattr(row, "year")))
+    return f"{yearbook}*{category}*{year}"
+
+
 def unique_output_path(folder: Path, name: str) -> Path:
     for suffix in range(MAX_FILENAME_SUFFIX + 1):
         candidate = folder / (f"{name}.pdf" if suffix == 0 else f"{name}_{suffix}.pdf")
@@ -302,8 +315,12 @@ def split_and_rename_pdf() -> None:
     total_pages = len(reader.pages)
 
     df["output_name"] = df.apply(generate_output_name, axis=1)
+    df["subfolder_name"] = df.apply(generate_subfolder_name, axis=1)
 
-    existing = df["output_name"].map(lambda name: (output_folder / f"{name}.pdf").exists())
+    existing = df.apply(
+        lambda row: (output_folder / row["subfolder_name"] / f"{row['output_name']}.pdf").exists(),
+        axis=1,
+    )
 
     overwrite_all = False
     if existing.any():
@@ -318,9 +335,10 @@ def split_and_rename_pdf() -> None:
             print_error(f"Invalid page range in row {idx}.", ["Check pdf_start and pdf_end values"])
             raise ControlledExit
 
-        output_path = output_folder / f"{row.output_name}.pdf"
+        row_subfolder = create_subfolder(output_folder, row.subfolder_name)
+        output_path = row_subfolder / f"{row.output_name}.pdf"
         if output_path.exists() and not overwrite_all:
-            output_path = unique_output_path(output_folder, row.output_name)
+            output_path = unique_output_path(row_subfolder, row.output_name)
 
         extract_pdf_pages(reader, pdf_start, pdf_end, output_path)
 
