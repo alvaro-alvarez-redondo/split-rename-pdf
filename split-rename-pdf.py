@@ -123,9 +123,13 @@ def check_pdf_files(base_dir: Path) -> Path:
 
 
 def create_output_folder(base_dir: Path, folder_name: str) -> Path:
+    for existing_folder in base_dir.iterdir():
+        if existing_folder.is_dir() and existing_folder.name == folder_name:
+            print(f"{INFO}Reusing existing output folder '{existing_folder.name}'{RST}")
+            return existing_folder
     folder = base_dir / folder_name
     folder.mkdir(exist_ok=True)
-    print(f"{INFO}Output folder '{folder.name}' ready{RST}")
+    print(f"{INFO}Output folder '{folder.name}' created{RST}")
     return folder
 
 
@@ -272,7 +276,7 @@ def generate_subfolder_name(row) -> str:
     yearbook = sanitize_filename(str(getattr(row, "yearbook")))
     category = sanitize_filename(str(getattr(row, "category")))
     year = sanitize_filename(str(getattr(row, "year")))
-    return f"{yearbook}*{category}*{year}"
+    return f"{yearbook}_{category}_{year}"
 
 
 def unique_output_path(folder: Path, name: str) -> Path:
